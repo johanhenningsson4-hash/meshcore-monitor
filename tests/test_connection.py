@@ -41,6 +41,16 @@ class FakeClient:
         self.disconnected_callback(self)
 
 
+class MonitorEvent(asyncio.Event):
+    def __init__(self):
+        super().__init__()
+        self.waiting = asyncio.Event()
+
+    async def wait(self):
+        self.waiting.set()
+        return await super().wait()
+
+
 class ConnectionTests(unittest.IsolatedAsyncioTestCase):
     async def test_next_message_waits_until_activity_is_saved(self):
         release = asyncio.Event()
@@ -191,7 +201,7 @@ class ConnectionTests(unittest.IsolatedAsyncioTestCase):
                 client = FakeClient(None, None, [response], [])
                 client.is_connected = True
                 connection = MeshConnection(SimpleNamespace(name="Radio"), lambda p: None,
-                                            lambda *s: None, errors.append, timeout=0.01)
+                                            lambda *s: None, errors.append, timeout=1)
                 connection.client = client
                 connection.ready = True
                 client.callback = connection._notification
@@ -214,18 +224,14 @@ class ConnectionTests(unittest.IsolatedAsyncioTestCase):
         connection = MeshConnection(SimpleNamespace(name="Radio"), packets.append,
                                     lambda *status: statuses.append(status), errors.append,
                                     client_factory=factory, poll_interval=60)
+        connection.wakeup = MonitorEvent()
         task = asyncio.create_task(connection.run())
-        for _ in range(100):
-            if len(writes) >= 6 and connection.pending is None:
-                break
-            await asyncio.sleep(0.001)
+        await asyncio.wait_for(connection.wakeup.waiting.wait(), 5)
         self.assertEqual(writes, [1, 0x16, 0x14, 0x14, 0x0A, 0x0A])
         self.assertEqual([p["text"] for p in packets if p["type"] == "message"], ["Hi"])
+        connection.wakeup.waiting.clear()
         clients[0].callback(None, bytes([0x83]))
-        for _ in range(100):
-            if len(writes) >= 8:
-                break
-            await asyncio.sleep(0.001)
+        await asyncio.wait_for(connection.wakeup.waiting.wait(), 5)
         self.assertEqual(writes[-2:], [0x14, 0x0A])
         task.cancel()
         await task
@@ -242,7 +248,7 @@ class ConnectionTests(unittest.IsolatedAsyncioTestCase):
                 )
                 connection = MeshConnection(SimpleNamespace(name="Radio"), lambda p: None,
                                             lambda *s: statuses.append(s), errors.append,
-                                            client_factory=factory, timeout=0.01)
+                                            client_factory=factory, timeout=1)
                 await connection.run()
                 self.assertIn(expected, errors[0])
                 self.assertEqual(statuses[-1][0], "disconnected")
@@ -275,16 +281,13 @@ class ConnectionTests(unittest.IsolatedAsyncioTestCase):
         connection = MeshConnection(SimpleNamespace(name="Radio"), lambda p: None,
                                     lambda *s: statuses.append(s), errors.append,
                                     client_factory=factory, retry_delay=0.001, poll_interval=60)
+        connection.wakeup = MonitorEvent()
         task = asyncio.create_task(connection.run())
-        for _ in range(100):
-            if len(writes) >= 5:
-                break
-            await asyncio.sleep(0.001)
+        await asyncio.wait_for(connection.wakeup.waiting.wait(), 5)
+        connection.wakeup.waiting.clear()
         clients[0].drop()
-        for _ in range(200):
-            if len(writes) >= 10:
-                break
-            await asyncio.sleep(0.001)
+        await asyncio.wait_for(connection.wakeup.waiting.wait(), 5)
+        self.assertEqual(len(writes), 10)
         self.assertEqual(len(clients), 3)
         self.assertEqual([s[0] for s in statuses].count("connected"), 2)
         self.assertFalse(errors)
