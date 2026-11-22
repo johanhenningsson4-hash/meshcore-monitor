@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    name: Desktop (${{ matrix.os }}, Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ['3.9', '3.14']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install Linux GUI dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y python3-tk xvfb xauth
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Compile Python application
+        run: python -m compileall -q meshcore_monitor
+      - name: Check GUI (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a python -c "import tkinter; root = tkinter.Tk(); root.destroy()"
+      - name: Run desktop tests (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a python -m unittest discover -s tests -v
+      - name: Check GUI (Windows)
+        if: runner.os == 'Windows'
+        run: python -c "import tkinter; root = tkinter.Tk(); root.destroy()"
+      - name: Run desktop tests (Windows)
+        if: runner.os == 'Windows'
+        run: python -m unittest discover -s tests -v
+
+  web:
+    name: Web dashboard tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test

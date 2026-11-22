@@ -59,6 +59,8 @@ Run the existing web tests with:
 node --test
 ```
 
+GitHub Actions runs the desktop tests on Windows and Linux with Python 3.9 and 3.14, and runs the web tests on Linux. The CI tests use simulated radios; they do not verify Bluetooth hardware.
+
 The implementation follows the [MeshCore companion protocol](https://github.com/meshcore-dev/MeshCore/blob/main/docs/companion_protocol.md).
 
 ## Author and license
