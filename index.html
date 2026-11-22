@@ -56,14 +56,33 @@
       <section class="activity" aria-labelledby="activity-title">
         <div class="section-header">
           <div><div class="eyebrow">LIVE FEED</div><h2 id="activity-title">Recent activity <span id="message-count">0</span></h2></div>
-          <button id="clear" class="button secondary" type="button">Clear feed</button>
+          <div class="activity-actions">
+            <button id="export" class="button secondary" type="button" disabled>Export JSON</button>
+            <button id="clear" class="button secondary" type="button" disabled>Clear feed</button>
+          </div>
         </div>
         <div class="feed">
           <div class="feed-head"><span>RECEIVED MESSAGES</span><span id="feed-status"><span class="tiny-dot"></span> WAITING FOR CONNECTION</span></div>
+          <div class="feed-tools">
+            <label class="search-field">
+              <span class="sr-only">Search activity</span>
+              <input id="search" type="search" placeholder="Search sender or message…" autocomplete="off">
+            </label>
+            <label>
+              <span class="sr-only">Filter message type</span>
+              <select id="message-filter">
+                <option value="all">All activity</option>
+                <option value="channel">Channel messages</option>
+                <option value="contact">Contact messages</option>
+                <option value="datagram">Binary datagrams</option>
+              </select>
+            </label>
+            <span id="feed-count" class="feed-count" aria-live="polite">0 saved</span>
+          </div>
           <div id="empty" class="empty">
             <div class="empty-icon" aria-hidden="true">✳</div>
-            <h3>Nothing here yet</h3>
-            <p>Connect your radio to see incoming messages.<br>New activity will appear here as it arrives.</p>
+            <h3 id="empty-title">Nothing here yet</h3>
+            <p id="empty-detail">Connect your radio to see incoming messages.<br>New activity will appear here as it arrives.</p>
           </div>
           <ol id="messages" class="messages" aria-live="polite" aria-label="Received messages"></ol>
         </div>

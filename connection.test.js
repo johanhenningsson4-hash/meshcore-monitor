@@ -66,3 +66,26 @@ test('surfaces a malformed packet and disconnects', async () => {
   assert.match(errors[0], /Incomplete/);
   assert.equal(mock.device.gatt.connected, false);
 });
+
+test('reconnects to an authorized device after an unexpected disconnect', async () => {
+  const mock = fakeDevice([self, [13, 3], battery, battery, [10], self, [13, 3], battery, battery, [10]]);
+  const statuses = [];
+  const connection = new MeshConnection({
+    onPacket() {},
+    onStatus: (status, detail) => statuses.push([status, detail]),
+    onError: error => { throw error; },
+    retryDelay: 1,
+    maxReconnectAttempts: 2,
+  });
+  await connection.connect(mock.bluetooth);
+  await new Promise(resolve => setTimeout(resolve, 10));
+
+  mock.device.gatt.connected = false;
+  mock.device.dispatchEvent(new Event('gattserverdisconnected'));
+  await new Promise(resolve => setTimeout(resolve, 20));
+
+  assert.deepEqual(statuses.map(status => status[0]), ['connecting', 'connected', 'connecting', 'connected']);
+  assert.equal(statuses[2][1], 'Device disconnected. Reconnecting…');
+  assert.equal(mock.device.gatt.connected, true);
+  connection.close();
+});

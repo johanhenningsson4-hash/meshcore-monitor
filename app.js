@@ -1,8 +1,9 @@
 import { MeshConnection } from './connection.js';
+import { addStoredMessage, clearMessages, createExport, loadMessages, saveMessages } from './activity-store.js';
 
 const $ = id => document.getElementById(id);
 let connection;
-let count = 0;
+let activity = [];
 
 function showNotice(message, error = false) {
   $('notice').classList.toggle('error', error);
@@ -15,7 +16,7 @@ function setStatus(status, detail) {
   const connected = status === 'connected';
   $('status').textContent = status === 'connecting' ? 'Connecting…' : connected ? 'Connected' : 'Disconnected';
   $('status-dot').classList.toggle('online', connected);
-  $('connection-detail').textContent = connected ? (detail || 'Companion radio connected') : (detail || 'Connect a companion radio to get started.');
+  $('connection-detail').textContent = detail || (connected ? 'Companion radio connected' : 'Connect a companion radio to get started.');
   $('connection-footer').textContent = connected ? 'ONLINE' : 'OFFLINE';
   $('feed-status').lastChild.textContent = connected ? ' LISTENING' : ' WAITING FOR CONNECTION';
   $('feed-status').classList.toggle('online-text', connected);
@@ -24,10 +25,13 @@ function setStatus(status, detail) {
 }
 
 function clearFeed() {
-  $('messages').replaceChildren();
-  $('empty').hidden = false;
-  count = 0;
-  $('message-count').textContent = '0';
+  try {
+    clearMessages();
+    activity = [];
+    renderFeed();
+  } catch (error) {
+    showNotice(`Could not clear saved activity: ${error.message}`, true);
+  }
 }
 
 function resetDevice() {
@@ -36,7 +40,6 @@ function resetDevice() {
   $('frequency').replaceChildren(document.createTextNode('— '), unit('MHz'));
   $('radio-detail').textContent = 'Waiting for device data';
   $('firmware').textContent = '—';
-  clearFeed();
 }
 
 function unit(label) {
@@ -45,20 +48,32 @@ function unit(label) {
   return element;
 }
 
-function addMessage(packet) {
+function matchesFilter(entry) {
+  const { packet } = entry;
+  const filter = $('message-filter').value;
+  if (filter === 'channel' && packet.kind !== 'Channel') return false;
+  if (filter === 'contact' && packet.kind !== 'Contact') return false;
+  if (filter === 'datagram' && packet.type !== 'datagram') return false;
+
+  const query = $('search').value.trim().toLocaleLowerCase();
+  if (!query) return true;
+  return [packet.sender, packet.text, packet.kind, packet.type]
+    .filter(value => typeof value === 'string')
+    .some(value => value.toLocaleLowerCase().includes(query));
+}
+
+function messageElement(entry) {
+  const packet = entry.packet;
   const item = document.createElement('li');
   const header = document.createElement('div');
   header.className = 'message-header';
   const sender = document.createElement('strong');
   sender.textContent = packet.kind === 'Contact' ? `Contact ${packet.sender}` : packet.sender;
   const time = document.createElement('time');
-  if (packet.timestamp) {
-    const date = new Date(packet.timestamp * 1000);
-    time.dateTime = date.toISOString();
-    time.textContent = date.toLocaleString();
-  } else {
-    time.textContent = 'Time unavailable';
-  }
+  const timestamp = packet.timestamp ? packet.timestamp * 1000 : entry.receivedAt;
+  const date = new Date(timestamp);
+  time.dateTime = date.toISOString();
+  time.textContent = `${date.toLocaleString()}${packet.timestamp ? '' : ' · received'}`;
   header.append(sender, time);
   const body = document.createElement('p');
   body.textContent = packet.type === 'datagram'
@@ -67,11 +82,48 @@ function addMessage(packet) {
   const meta = document.createElement('div');
   meta.className = 'message-meta';
   meta.textContent = packet.type === 'datagram' ? 'CHANNEL DATA' :
-    `${packet.kind.toUpperCase()}${packet.snr === null ? '' : ` · SNR ${packet.snr} dB`}${packet.textType ? ` · TEXT TYPE ${packet.textType}` : ''}`;
+    `${(packet.kind || 'MESSAGE').toUpperCase()}${packet.snr === null ? '' : ` · SNR ${packet.snr} dB`}${packet.textType ? ` · TEXT TYPE ${packet.textType}` : ''}`;
   item.append(header, body, meta);
-  $('messages').prepend(item);
-  $('empty').hidden = true;
-  $('message-count').textContent = String(++count);
+  return item;
+}
+
+function renderFeed() {
+  const visible = activity.filter(matchesFilter);
+  $('messages').replaceChildren(...visible.map(messageElement));
+  $('empty').hidden = visible.length > 0;
+  $('message-count').textContent = String(activity.length);
+  $('feed-count').textContent = visible.length === activity.length
+    ? `${activity.length} saved`
+    : `${visible.length} of ${activity.length} shown`;
+  $('export').disabled = activity.length === 0;
+  $('clear').disabled = activity.length === 0;
+
+  const filtering = $('search').value.trim() || $('message-filter').value !== 'all';
+  $('empty-title').textContent = filtering ? 'No matching activity' : 'Nothing here yet';
+  $('empty-detail').textContent = filtering
+    ? 'Try a different search or message type filter.'
+    : 'Connect your radio to see incoming messages.\nNew activity will appear here as it arrives.';
+  $('empty-detail').style.whiteSpace = 'pre-line';
+}
+
+function addMessage(packet) {
+  activity = addStoredMessage(activity, packet);
+  try {
+    saveMessages(activity);
+  } catch (error) {
+    showNotice(`Message received, but activity could not be saved: ${error.message}`, true);
+  }
+  renderFeed();
+}
+
+function exportFeed() {
+  const blob = new Blob([createExport(activity)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `meshcore-activity-${new Date().toISOString().replaceAll(':', '-')}.json`;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 function onPacket(packet) {
@@ -113,3 +165,13 @@ $('connect').addEventListener('click', async () => {
 });
 
 $('clear').addEventListener('click', clearFeed);
+$('export').addEventListener('click', exportFeed);
+$('search').addEventListener('input', renderFeed);
+$('message-filter').addEventListener('change', renderFeed);
+
+try {
+  activity = loadMessages();
+} catch (error) {
+  showNotice(`Saved activity could not be loaded: ${error.message}`, true);
+}
+renderFeed();
