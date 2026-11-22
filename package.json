@@ -1,5 +1,7 @@
 {
   "name": "meshcore-monitor",
+  "author": "Johan Henningsson",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "scripts": {

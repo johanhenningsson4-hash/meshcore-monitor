@@ -60,3 +60,7 @@ node --test
 ```
 
 The implementation follows the [MeshCore companion protocol](https://github.com/meshcore-dev/MeshCore/blob/main/docs/companion_protocol.md).
+
+## Author and license
+
+Created by Johan Henningsson. Licensed under the [MIT License](LICENSE).
